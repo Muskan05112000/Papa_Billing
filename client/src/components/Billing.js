@@ -13,12 +13,22 @@ function Billing() {
         return saved || format(new Date(), 'yyyy-MM-dd');
     });
     const [customer, setCustomer] = useState(() => {
-        const saved = localStorage.getItem('billing_customer');
-        return saved ? JSON.parse(saved) : { name: '', address: '' };
+        try {
+            const saved = localStorage.getItem('billing_customer');
+            const parsed = saved ? JSON.parse(saved) : null;
+            return (parsed && typeof parsed === 'object') ? parsed : { name: '', address: '' };
+        } catch (e) {
+            return { name: '', address: '' };
+        }
     });
     const [rows, setRows] = useState(() => {
-        const saved = localStorage.getItem('billing_rows');
-        return saved ? JSON.parse(saved) : [{ name: '', unit: '', qty: '', rate: '', amount: 0 }];
+        try {
+            const saved = localStorage.getItem('billing_rows');
+            const parsed = saved ? JSON.parse(saved) : null;
+            return Array.isArray(parsed) ? parsed : [{ name: '', unit: '', qty: '', rate: '', amount: 0 }];
+        } catch (e) {
+            return [{ name: '', unit: '', qty: '', rate: '', amount: 0 }];
+        }
     });
     const [masterItems, setMasterItems] = useState([]);
     const [customers, setCustomers] = useState([]);
@@ -93,7 +103,7 @@ function Billing() {
     useEffect(() => {
         loadInitialData();
         // If there was a saved customer, fetch their items
-        if (customer.name) {
+        if (customer && customer.name) {
             handleCustomerChange(customer.name);
         }
     }, []);
@@ -127,7 +137,7 @@ function Billing() {
     };
 
     const handleCustomerChange = async (name) => {
-        setCustomer({ ...customer, name });
+        setCustomer(prev => ({ ...(prev || { name: '', address: '' }), name }));
         if (name.trim()) {
             try {
                 const res = await fetchCustomerItems(name);
@@ -203,21 +213,25 @@ function Billing() {
         const recognition = new SpeechRecognition();
         recognition.lang = 'en-IN';
         recognition.interimResults = false;
+        recognition.continuous = true; // Stay active to hear multiple items
 
         recognition.onstart = () => {
             setIsListening(true);
-            setVoiceFeedback('Listening for billing command...');
+            setVoiceFeedback('Listening... Say vegetables or "Stop" to finish.');
         };
 
         recognition.onresult = async (event) => {
-            const transcript = event.results[0][0].transcript.toLowerCase();
+            // In continuous mode, results are in an array
+            const lastIndex = event.results.length - 1;
+            const transcript = event.results[lastIndex][0].transcript.toLowerCase();
             setVoiceFeedback(`Heard: "${transcript}"`);
-            await processCommand(transcript);
+            await processCommand(transcript, recognition);
         };
 
-        recognition.onerror = () => {
+        recognition.onerror = (event) => {
+            if (event.error === 'no-speech') return; // Ignore silent pauses in continuous mode
             setIsListening(false);
-            setVoiceFeedback('Speech error or No command detected.');
+            setVoiceFeedback(`Error: ${event.error}`);
         };
 
         recognition.onend = () => {
@@ -227,92 +241,102 @@ function Billing() {
         recognition.start();
     };
 
-    const processCommand = async (cmd) => {
-        // 1. Set Customer: "Customer John" or "Customer name is John"
-        const custMatch = cmd.match(/(?:customer|customer name is)\s+(.+)/i);
-        if (custMatch) {
-            const name = custMatch[1].trim();
-            handleCustomerChange(name);
-            setVoiceFeedback(`Set Customer to: ${name}`);
+    const processCommand = async (cmd, recognitionInstance) => {
+        // Stop/End Command
+        if (cmd.includes('stop') || cmd.includes('finish') || cmd.includes('end') || cmd.includes('done')) {
+            if (recognitionInstance) recognitionInstance.stop();
+            setVoiceFeedback("Voice recognition stopped.");
             return;
         }
 
-        // 2. Add Item: "Add 10kg Tomato" or "Add Tomato 5kg" or "Tomato quantity is 10"
-        // Pattern: Add [Qty] [Unit] [Item]
-        const addPattern1 = /add\s+(\d+(?:\.\d+)?)\s*([a-z]+)?\s+(.+)/i;
-        // Pattern: Add [Item] [Qty] [Unit] 
-        const addPattern2 = /add\s+(.+)\s+(\d+(?:\.\d+)?)\s*([a-z]+)?/i;
-        // Pattern: [Item] quantity is [Qty] [Unit]
-        const addPattern3 = /(.+)\s+quantity\s+is\s+(\d+(?:\.\d+)?)\s*([a-z]+)?/i;
+        // Split by "and" or commas to handle multiple items in one go
+        const parts = cmd.split(/ and |, /);
 
-        let match;
-        let qty, unit, itemName;
+        for (let part of parts) {
+            part = part.trim();
+            if (!part) continue;
 
-        if ((match = cmd.match(addPattern1))) {
-            const [ignored, qVal, uVal, iVal] = match;
-            qty = qVal; unit = uVal; itemName = iVal;
-        } else if ((match = cmd.match(addPattern2))) {
-            const [ignored, iVal, qVal, uVal] = match;
-            itemName = iVal; qty = qVal; unit = uVal;
-        } else if ((match = cmd.match(addPattern3))) {
-            const [ignored, iVal, qVal, uVal] = match;
-            itemName = iVal; qty = qVal; unit = uVal;
-        }
-
-        if (qty && itemName) {
-            const q = parseFloat(qty);
-            const u = unit ? unit.charAt(0).toUpperCase() + unit.slice(1) : 'Kg';
-            const item = itemName.trim();
-
-            // Find current row to fill or add new row
-            const newRows = [...rows];
-            let lastRow = newRows[newRows.length - 1];
-
-            // If last row has a name and it's not the one we want, add a new row
-            if (lastRow.name && lastRow.name !== item) {
-                newRows.push({ name: '', unit: '', qty: '', rate: '', amount: 0 });
-                lastRow = newRows[newRows.length - 1];
+            // 1. Set Customer: "Customer John" or "Customer name is John"
+            const custMatch = part.match(/(?:customer|customer name is)\s+(.+)/i);
+            if (custMatch) {
+                const name = custMatch[1].trim();
+                handleCustomerChange(name);
+                setVoiceFeedback(`Set Customer to: ${name}`);
+                continue;
             }
 
-            lastRow.name = item;
-            lastRow.qty = q;
-            lastRow.unit = u;
+            // 2. Add Item: "Add 10kg Tomato" or "Add Tomato 5kg" or "Tomato quantity is 10"
+            const addPattern1 = /(?:add\s+)?(\d+(?:\.\d+)?)\s*([a-z]+)?\s+(.+)/i;
+            const addPattern2 = /(?:add\s+)?(.+)\s+(\d+(?:\.\d+)?)\s*([a-z]+)?/i;
+            const addPattern3 = /(.+)\s+quantity\s+is\s+(\d+(?:\.\d+)?)\s*([a-z]+)?/i;
 
-            // Trigger the same logic as manual selection to fetch price
-            // We need to fetch the price from either customerItems or masterItems
-            const custPriceMatch = customerItems.find(i => i.itemName.toLowerCase() === item.toLowerCase());
-            if (custPriceMatch) {
-                lastRow.rate = custPriceMatch.rate;
-                lastRow.amount = calculateRowAmount(q, custPriceMatch.rate, u);
-            } else {
-                const masterMatch = masterItems.find(i => i.name.toLowerCase() === item.toLowerCase());
-                if (masterMatch) {
-                    lastRow.rate = masterMatch.defaultRate;
-                    lastRow.amount = calculateRowAmount(q, masterMatch.defaultRate, u);
-                }
+            let match;
+            let qty, unit, itemName;
+
+            if ((match = part.match(addPattern3))) {
+                const [_, iVal, qVal, uVal] = match;
+                itemName = iVal; qty = qVal; unit = uVal;
+            } else if ((match = part.match(addPattern1)) && !isNaN(parseFloat(match[1]))) {
+                const [_, qVal, uVal, iVal] = match;
+                qty = qVal; unit = uVal; itemName = iVal;
+            } else if ((match = part.match(addPattern2))) {
+                const [_, iVal, qVal, uVal] = match;
+                itemName = iVal; qty = qVal; unit = uVal;
             }
 
-            setRows(newRows);
-            setVoiceFeedback(`Added ${q} ${u} ${item}`);
-            return;
-        }
+            if (qty && itemName) {
+                const q = parseFloat(qty);
+                const u = unit ? unit.charAt(0).toUpperCase() + unit.slice(1) : 'Kg';
+                const item = itemName.trim();
 
-        // 3. Save: "Save as PDF", "Download PDF", "Save Bill"
-        if (cmd.includes('save') || cmd.includes('pdf') || cmd.includes('download')) {
-            setVoiceFeedback("Saving and downloading PDF...");
-            saveAndExport('pdf');
-            return;
-        }
+                setRows(currentRows => {
+                    const newRows = (currentRows && currentRows.length > 0) ? [...currentRows] : [{ name: '', unit: '', qty: '', rate: '', amount: 0 }];
+                    let lastRow = newRows[newRows.length - 1];
 
-        // 4. Reset: "Clear bill", "New bill"
-        if (cmd.includes('new bill') || cmd.includes('clear')) {
-            setRows([{ name: '', unit: '', qty: '', rate: '', amount: 0 }]);
-            setCustomer({ name: '', address: '' });
-            setVoiceFeedback("Bill Cleared");
-            return;
-        }
+                    if (lastRow && lastRow.name && lastRow.name !== item) {
+                        newRows.push({ name: '', unit: '', qty: '', rate: '', amount: 0 });
+                        lastRow = newRows[newRows.length - 1];
+                    }
 
-        setVoiceFeedback("Command not understood. Try 'Add 5kg Onion'");
+                    if (lastRow) {
+                        lastRow.name = item;
+                        lastRow.qty = q;
+                        lastRow.unit = u;
+
+                        const custPriceMatch = (customerItems || []).find(i => i.itemName && i.itemName.toLowerCase() === item.toLowerCase());
+                        if (custPriceMatch) {
+                            lastRow.rate = custPriceMatch.rate;
+                            lastRow.amount = calculateRowAmount(q, custPriceMatch.rate, u);
+                        } else {
+                            const masterMatch = (masterItems || []).find(i => i.name && i.name.toLowerCase() === item.toLowerCase());
+                            if (masterMatch) {
+                                lastRow.rate = masterMatch.defaultRate;
+                                lastRow.amount = calculateRowAmount(q, masterMatch.defaultRate, u);
+                            }
+                        }
+                    }
+                    return newRows;
+                });
+
+                setVoiceFeedback(`Added ${q} ${u} ${item}`);
+                continue;
+            }
+
+            // 3. Save: "Save as PDF", "Download PDF", "Save Bill"
+            if (part.includes('save') || part.includes('pdf') || part.includes('download')) {
+                setVoiceFeedback("Saving and downloading PDF...");
+                saveAndExport('pdf');
+                continue;
+            }
+
+            // 4. Reset: "Clear bill", "New bill"
+            if (part.includes('new bill') || part.includes('clear')) {
+                setRows([{ name: '', unit: '', qty: '', rate: '', amount: 0 }]);
+                setCustomer({ name: '', address: '' });
+                setVoiceFeedback("Bill Cleared");
+                continue;
+            }
+        }
     };
 
 
