@@ -1,0 +1,196 @@
+body {
+  font-family: 'Courier New', Courier, monospace;
+  /* Invoice feel */
+  background-color: #f4f4f4;
+  padding: 20px;
+}
+
+.container {
+  max-width: 900px;
+  margin: 0 auto;
+  background: white;
+  padding: 40px;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+  min-height: 100vh;
+}
+
+header {
+  text-align: center;
+  border-bottom: 2px solid #333;
+  padding-bottom: 20px;
+  margin-bottom: 30px;
+}
+
+h1 {
+  margin: 0;
+  font-size: 2.5rem;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+}
+
+.address {
+  font-size: 0.9rem;
+  color: #555;
+  margin-top: 5px;
+}
+
+.bill-header {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 20px;
+}
+
+.form-group {
+  margin-bottom: 10px;
+}
+
+label {
+  font-weight: bold;
+  display: block;
+  margin-bottom: 5px;
+}
+
+input,
+select {
+  padding: 8px;
+  border: 1px solid #ddd;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 20px;
+}
+
+th,
+td {
+  border: 1px solid #333;
+  padding: 10px;
+  text-align: left;
+}
+
+th {
+  background-color: #eee;
+  font-weight: bold;
+}
+
+tfoot td {
+  font-weight: bold;
+  background-color: #f9f9f9;
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 20px;
+  border-top: 2px dashed #aaa;
+  padding-top: 20px;
+}
+
+button {
+  padding: 10px 20px;
+  background: #333;
+  color: white;
+  border: none;
+  cursor: pointer;
+  font-weight: bold;
+}
+
+button:hover {
+  background: #555;
+}
+
+button.secondary {
+  background: #888;
+}
+
+@media print {
+  body {
+    background: white;
+    padding: 0;
+  }
+
+  .container {
+    box-shadow: none;
+    max-width: 100%;
+  }
+
+  .print-hidden,
+  .actions,
+  .nav-tabs {
+    display: none;
+  }
+
+  input {
+    border: none;
+    background: transparent;
+  }
+}
+
+.nav-tabs {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 20px;
+}
+
+.nav-tabs button {
+  background: #ddd;
+  color: #333;
+}
+
+.nav-tabs button.active {
+  background: #333;
+  color: white;
+}
+
+.card {
+  border: 1px solid #ddd;
+  padding: 15px;
+  background: #fff;
+  margin-bottom: 20px;
+}
+
+.card h3 {
+  margin-top: 0;
+  border-bottom: 1px solid #eee;
+  padding-bottom: 10px;
+}
+
+/* Voice & Action Styles */
+.voice-active {
+  background: #fff !important;
+  color: red !important;
+  border: 2px solid red !important;
+  animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+  0% {
+    transform: scale(1);
+  }
+
+  50% {
+    transform: scale(1.05);
+  }
+
+  100% {
+    transform: scale(1);
+  }
+}
+
+.delete-btn {
+  background: transparent !important;
+  color: #ff4d4f !important;
+  border: none !important;
+  padding: 5px !important;
+  cursor: pointer;
+  transition: color 0.3s;
+}
+
+.delete-btn:hover {
+  color: #d9363e !important;
+  background: transparent !important;
+}
