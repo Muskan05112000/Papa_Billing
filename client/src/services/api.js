@@ -18,3 +18,9 @@ export const fetchBills = () => API.get('/bills');
 export const createBill = (bill) => API.post('/bills', bill);
 export const deleteBill = (id) => API.delete(`/bills/${id}`);
 export const fetchNextBillNo = () => API.get('/bills/next-number');
+export const fetchLedger = (customer, month, year) => API.get('/bills/ledger', { params: { customer, month, year } });
+
+export const fetchMasterSheets = () => API.get('/master-sheets');
+export const createMasterSheet = (sheet) => API.post('/master-sheets', sheet);
+export const fetchNextMasterSheetNo = () => API.get('/master-sheets/next-no');
+export const fetchMasterSheetByDate = (date) => API.get('/master-sheets/by-date', { params: { date } });

@@ -1,35 +1,34 @@
 import React, { useState, useEffect } from 'react';
-import { fetchItems, fetchNextBillNo, createBill, fetchCustomers, addCustomer, fetchCustomerItems } from '../services/api';
+import { fetchItems, fetchNextBillNo, createBill, fetchCustomers, addCustomer, fetchCustomerItems, fetchMasterSheetByDate } from '../services/api';
 import { Mic, MicOff, Trash2, RotateCw } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { format } from 'date-fns';
 
+const HOTEL_CODE_MAP = {
+    'Omex': 'OMX',
+    'Latango': 'LAT',
+    'Latango Bar': 'LAT_B',
+    'Japanico': 'JAP',
+    'Japanico Bar': 'JAP_B',
+    'Pearch': 'PER',
+    'Pearch Bar': 'PER_B',
+    'CC': 'CC',
+    'Refuge': 'REF',
+    'Tree': 'TRE',
+    'Manam': 'MAN',
+    'CNC': 'CNC',
+    'KaliGhata': 'KAG',
+    'KaliGhata 2': 'KAG2',
+    'BTB': 'BTB'
+};
+
 function Billing() {
     const [billNo, setBillNo] = useState(1);
-    const [date, setDate] = useState(() => {
-        const saved = localStorage.getItem('billing_date');
-        return saved || format(new Date(), 'yyyy-MM-dd');
-    });
-    const [customer, setCustomer] = useState(() => {
-        try {
-            const saved = localStorage.getItem('billing_customer');
-            const parsed = saved ? JSON.parse(saved) : null;
-            return (parsed && typeof parsed === 'object') ? parsed : { name: '', address: '' };
-        } catch (e) {
-            return { name: '', address: '' };
-        }
-    });
-    const [rows, setRows] = useState(() => {
-        try {
-            const saved = localStorage.getItem('billing_rows');
-            const parsed = saved ? JSON.parse(saved) : null;
-            return Array.isArray(parsed) ? parsed : [{ name: '', unit: '', qty: '', rate: '', amount: 0 }];
-        } catch (e) {
-            return [{ name: '', unit: '', qty: '', rate: '', amount: 0 }];
-        }
-    });
+    const [date, setDate] = useState(format(new Date(), 'yyyy-MM-dd'));
+    const [customer, setCustomer] = useState({ name: '', address: '' });
+    const [rows, setRows] = useState([{ name: '', unit: '', qty: '', rate: '', amount: 0 }]);
     const [masterItems, setMasterItems] = useState([]);
     const [customers, setCustomers] = useState([]);
     const [customerItems, setCustomerItems] = useState([]);
@@ -41,7 +40,6 @@ function Billing() {
         if (loading) return;
         setLoading(true);
 
-        // 1. Save to DB
         const billData = {
             billNo,
             date,
@@ -52,35 +50,20 @@ function Billing() {
 
         try {
             await createBill(billData);
-
-            // 2. Export
             if (type === 'excel') generateExcel(billData);
             else if (type === 'pdf') generatePDF(billData);
 
             alert('Bill Saved & Exported!');
-            // Reset & Clear Persistence
-            localStorage.removeItem('billing_rows');
-            localStorage.removeItem('billing_customer');
-            localStorage.removeItem('billing_date');
             setRows([{ name: '', unit: '', qty: '', rate: '', amount: 0 }]);
             setCustomer({ name: '', address: '' });
-            loadInitialData(); // get next bill no
+            loadInitialData();
         } catch (err) {
             console.error(err);
             if (err.response && err.response.status === 409) {
-                // Duplicate Key Error - Auto Refresh and Alert
                 alert("Duplicate Bill Number! Fetching the correct next number... Please try saving again.");
                 const billRes = await fetchNextBillNo();
                 setBillNo(billRes.data.nextBillNo);
-            } else if (err.response) {
-                // Server responded with error
-                const msg = err.response.data?.message || 'Server Error';
-                alert(`Save Failed: ${msg}`);
-            } else if (err.request) {
-                // No response received
-                alert('Network Error: Could not connect to server.');
             } else {
-                // Error setting up request or PDF generation error
                 alert(`Error: ${err.message}`);
             }
         } finally {
@@ -98,27 +81,14 @@ function Billing() {
         return q * r;
     };
 
-
-
     useEffect(() => {
         loadInitialData();
-        // If there was a saved customer, fetch their items
+    }, []);
+
+    useEffect(() => {
         if (customer && customer.name) {
             handleCustomerChange(customer.name);
         }
-    }, []);
-
-    // Persist to localStorage
-    useEffect(() => {
-        localStorage.setItem('billing_rows', JSON.stringify(rows));
-    }, [rows]);
-
-    useEffect(() => {
-        localStorage.setItem('billing_customer', JSON.stringify(customer));
-    }, [customer]);
-
-    useEffect(() => {
-        localStorage.setItem('billing_date', date);
     }, [date]);
 
     const loadInitialData = async () => {
@@ -148,11 +118,61 @@ function Billing() {
                 if (existing) {
                     setCustomer({ name: existing.name, address: existing.address });
                 }
+
+                // Fetch data from Master Sheet for the selected date
+                const sheetRes = await fetchMasterSheetByDate(date);
+                if (sheetRes.data) {
+                    const sheet = sheetRes.data;
+                    const code = HOTEL_CODE_MAP[name] || name.toUpperCase();
+                    const colIndex = sheet.headerColumns.findIndex(h => h.trim().toUpperCase() === code.trim().toUpperCase());
+
+                    if (colIndex !== -1) {
+                        const newRows = sheet.dataRows
+                            .filter(row => (parseFloat(row.values[colIndex]) || 0) > 0)
+                            .map(row => {
+                                const qty = parseFloat(row.values[colIndex]) || 0;
+                                const itemName = row.name.trim();
+
+                                // Auto-fill rate and unit
+                                let rate = 0;
+                                let unit = 'Kg';
+
+                                // Find Item in Master List for baseline
+                                const mi = masterItems.find(i => i.name.trim().toLowerCase() === itemName.toLowerCase());
+                                if (mi) {
+                                    rate = mi.defaultRate;
+                                    unit = mi.unit;
+                                }
+
+                                // Override with Customer Price if exists and is > 0
+                                const cp = res.data.find(i => i.itemName.trim().toLowerCase() === itemName.toLowerCase());
+                                if (cp && cp.rate > 0) {
+                                    rate = cp.rate;
+                                    unit = cp.unit;
+                                }
+
+                                return {
+                                    name: itemName,
+                                    unit: unit,
+                                    qty: qty,
+                                    rate: rate,
+                                    amount: calculateRowAmount(qty, rate, unit)
+                                };
+                            });
+
+                        setRows(newRows.length > 0 ? newRows : [{ name: '', unit: '', qty: '', rate: '', amount: 0 }]);
+                    } else {
+                        setRows([{ name: '', unit: '', qty: '', rate: '', amount: 0 }]);
+                    }
+                } else {
+                    setRows([{ name: '', unit: '', qty: '', rate: '', amount: 0 }]);
+                }
             } catch (err) {
-                console.error("Error fetching customer items:", err);
+                console.error("Error fetching data:", err);
             }
         } else {
             setCustomerItems([]);
+            setRows([{ name: '', unit: '', qty: '', rate: '', amount: 0 }]);
         }
     };
 
@@ -162,21 +182,27 @@ function Billing() {
 
         // Autosuggest logic
         if (value.length > 0) {
-            // 1. Check Customer Specific Prices First
-            const custMatch = customerItems.find(i => i.itemName.toLowerCase() === value.toLowerCase());
-            if (custMatch) {
-                newRows[index].unit = custMatch.unit;
-                newRows[index].rate = custMatch.rate;
-                newRows[index].amount = calculateRowAmount(newRows[index].qty, custMatch.rate, custMatch.unit);
-            } else {
-                // 2. Fallback to Master List
-                const match = masterItems.find(i => i.name.toLowerCase() === value.toLowerCase());
-                if (match) {
-                    newRows[index].unit = match.unit;
-                    newRows[index].rate = match.defaultRate;
-                    newRows[index].amount = calculateRowAmount(newRows[index].qty, match.defaultRate, match.unit);
-                }
+            const searchVal = value.trim().toLowerCase();
+            let rate = 0;
+            let unit = 'Kg';
+
+            // 1. Check Master List for baseline
+            const mi = masterItems.find(i => i.name.trim().toLowerCase() === searchVal);
+            if (mi) {
+                rate = mi.defaultRate;
+                unit = mi.unit;
             }
+
+            // 2. Override with Customer Specific Prices if exists and is > 0
+            const cp = customerItems.find(i => i.itemName.trim().toLowerCase() === searchVal);
+            if (cp && cp.rate > 0) {
+                rate = cp.rate;
+                unit = cp.unit;
+            }
+
+            newRows[index].unit = unit;
+            newRows[index].rate = rate;
+            newRows[index].amount = calculateRowAmount(newRows[index].qty, rate, unit);
         }
         setRows(newRows);
     };

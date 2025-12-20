@@ -23,10 +23,12 @@ app.get('/', (req, res) => {
 const itemRoutes = require('./routes/items');
 const customerRoutes = require('./routes/customers');
 const billRoutes = require('./routes/bills');
+const masterSheetRoutes = require('./routes/masterSheets');
 
 app.use('/api/items', itemRoutes);
 app.use('/api/customers', customerRoutes);
 app.use('/api/bills', billRoutes);
+app.use('/api/master-sheets', masterSheetRoutes);
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));

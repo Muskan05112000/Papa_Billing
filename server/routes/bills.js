@@ -14,6 +14,28 @@ router.get('/', async (req, res) => {
     }
 });
 
+// Get bills for Ledger
+router.get('/ledger', async (req, res) => {
+    const { customer, month, year } = req.query;
+    try {
+        let query = {};
+        if (customer) {
+            query['customer.name'] = { $regex: new RegExp(`^${customer}$`, 'i') };
+        }
+
+        if (month && year) {
+            const startDate = new Date(year, month - 1, 1);
+            const endDate = new Date(year, month, 0, 23, 59, 59); // Last day of month
+            query.date = { $gte: startDate, $lte: endDate };
+        }
+
+        const bills = await Bill.find(query).sort({ date: 1 });
+        res.json(bills);
+    } catch (err) {
+        res.status(500).json({ message: err.message });
+    }
+});
+
 // Delete bill and re-number
 router.delete('/:id', async (req, res) => {
     try {
