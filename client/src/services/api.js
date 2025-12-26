@@ -12,6 +12,10 @@ export const addCustomer = (customer) => API.post('/customers', customer);
 export const fetchCustomerItems = (name) => API.get(`/customers/${encodeURIComponent(name)}/items`);
 export const fetchAllCustomerItems = () => API.get('/customers/all-items');
 export const addCustomerItem = (data) => API.post('/customers/items', data);
+export const addBulkCustomerItems = (data) => API.post('/customers/bulk-items', data);
+export const cleanupDuplicates = () => API.post('/customers/cleanup-duplicates');
+export const resetCustomerItems = () => API.delete('/customers/all-items');
+export const checkServerHealth = () => API.get('/customers/health');
 export const deleteCustomerItem = (id) => API.delete(`/customers/items/${id}`);
 
 export const fetchBills = () => API.get('/bills');

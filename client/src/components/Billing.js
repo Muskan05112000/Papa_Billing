@@ -12,16 +12,16 @@ const HOTEL_CODE_MAP = {
     'Latango Bar': 'LAT_B',
     'Japanico': 'JAP',
     'Japanico Bar': 'JAP_B',
-    'Pearch': 'PER',
-    'Pearch Bar': 'PER_B',
-    'CC': 'CC',
+    'Perch': 'PER',
+    'Perch Bar': 'PER_B',
+    'Carnatic Cafe': 'CC',
     'Refuge': 'REF',
-    'Tree': 'TRE',
+    'Korner 27': 'TRE',
     'Manam': 'MAN',
-    'CNC': 'CNC',
+    'Cellar and Cup': 'C&C',
     'KaliGhata': 'KAG',
     'KaliGhata 2': 'KAG2',
-    'BTB': 'BTB'
+    'Behind the Bar': 'BTB'
 };
 
 function Billing() {
@@ -107,14 +107,23 @@ function Billing() {
     };
 
     const handleCustomerChange = async (name) => {
-        setCustomer(prev => ({ ...(prev || { name: '', address: '' }), name }));
-        if (name.trim()) {
+        // Resolve abbreviation to full name if applicable
+        let resolvedName = name;
+        const entry = Object.entries(HOTEL_CODE_MAP).find(([fullName, abbr]) =>
+            abbr.toUpperCase() === name.trim().toUpperCase()
+        );
+        if (entry) {
+            resolvedName = entry[0];
+        }
+
+        setCustomer(prev => ({ ...(prev || { name: '', address: '' }), name: resolvedName }));
+        if (resolvedName.trim()) {
             try {
-                const res = await fetchCustomerItems(name);
+                const res = await fetchCustomerItems(resolvedName);
                 setCustomerItems(res.data);
 
                 // If the selected name matches an existing customer, auto-fill address
-                const existing = customers.find(c => c.name.toLowerCase() === name.toLowerCase());
+                const existing = customers.find(c => c.name.toLowerCase() === resolvedName.toLowerCase());
                 if (existing) {
                     setCustomer({ name: existing.name, address: existing.address });
                 }
@@ -123,7 +132,7 @@ function Billing() {
                 const sheetRes = await fetchMasterSheetByDate(date);
                 if (sheetRes.data) {
                     const sheet = sheetRes.data;
-                    const code = HOTEL_CODE_MAP[name] || name.toUpperCase();
+                    const code = HOTEL_CODE_MAP[resolvedName] || resolvedName.toUpperCase();
                     const colIndex = sheet.headerColumns.findIndex(h => h.trim().toUpperCase() === code.trim().toUpperCase());
 
                     if (colIndex !== -1) {

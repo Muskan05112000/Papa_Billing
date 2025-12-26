@@ -1,9 +1,9 @@
 const mongoose = require('mongoose');
 
 const CustomerItemSchema = new mongoose.Schema({
-    customerName: { type: String, required: true },
-    itemName: { type: String, required: true },
-    unit: { type: String, required: true },
+    customerName: { type: String, required: true, trim: true, lowercase: true },
+    itemName: { type: String, required: true, trim: true, lowercase: true },
+    unit: { type: String, required: true, trim: true },
     rate: { type: Number, required: true },
     lastUpdated: { type: Date, default: Date.now }
 });
